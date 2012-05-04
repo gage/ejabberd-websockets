@@ -1,2 +1,3 @@
 #!/bin/sh
-erl -pa /usr/lib/ejabberd/ebin -pz ebin -make
+erl -pa ../ejabberd/apps/ejabberd/ebin -pz ebin -make
+sudo cp ebin/*.beam /lib/ejabberd/ebin/
