@@ -67,7 +67,7 @@
 %%% API
 %%%----------------------------------------------------------------------
 process(Path, Req) ->
-    ?DEBUG("Request data:~p:", [Path, Req]),
+    ?DEBUG("Request data:~p:~p", [Path, Req]),
     %% Validate Origin
     case validate_origin(Req#wsrequest.headers) of
         true ->

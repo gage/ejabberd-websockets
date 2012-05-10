@@ -29,6 +29,7 @@
 	 start/4,
 	 process_request/5]).
 
+-include_lib("exmpp/include/exmpp.hrl").
 -include("ejabberd.hrl").
 
 %% Module constants
@@ -302,13 +303,16 @@ handle_sync_event(#wsr{out=Payload, socket=WSocket, sockmod=WSockmod},
                         ?DEBUG("streamend", []),
                       gen_fsm:send_event(
                         C2SPid, {xmlstreamend, End});
-                 ({xmlelement, "stream:stream", Attrs, []}) ->
-                        ?DEBUG("stream start xmlelement", []),
-                      send_stream_start(C2SPid, Attrs);
+	             ([{xmlel, 'http://etherx.jabber.org/streams', _, stream, Attrs, []}]=[Xel]) ->
+	                 ?DEBUG("stream start xmlelement", []),
+					 gen_fsm:send_event(
+					               C2SPid,
+					               {xmlstreamstart, Xel});
+	                  %%send_stream_start(C2SPid, Attrs);
                  ({xmlstreamstart, "stream:stream", Attrs}) ->
                      ?DEBUG("stream start stream:stream", []),
                       send_stream_start(C2SPid, Attrs);
-                 (El) ->
+                 ([El]) ->
                       gen_fsm:send_event(
                         C2SPid, {xmlstreamelement, El})
               end, Payload),
@@ -398,8 +402,9 @@ terminate(_Reason, _StateName, StateData) ->
 stream_start(ParsedPayload) ->
     ?DEBUG("~p~n",[ParsedPayload]),
     case ParsedPayload of
-        {xmlelement, "stream:stream", Attrs, _} ->
-            {"to",Host} = lists:keyfind("to", 1, Attrs),
+        [{xmlel, 'http://etherx.jabber.org/streams', _, stream, Attrs, _}] ->
+            ?DEBUG("dad im in!!!!",[]),
+            {xmlattr, _, <<"to">>, Host} = lists:keyfind(<<"to">>, 3, Attrs),
             Sid = sha:sha(term_to_binary({now(), make_ref()})),
             Key = "",
             {Host, Sid, Key};
@@ -414,7 +419,8 @@ stream_start(ParsedPayload) ->
 %% validate request sent. ensure that its parsable XMPP
 validate_request(Data, PayloadSize, MaxStanzaSize) ->
     ?DEBUG("--- incoming data --- ~n~s~n --- END --- ", [Data]),
-    case xml_stream:parse_element(Data) of
+    %%[El] = exmpp_xml:parse_document(Data, [names_as_atom]),
+    case exmpp_xmlstream:parse_element(Data) of
         {error, Reason} ->
             ?DEBUG("error parsing element: ~p", [Reason]),
             %% detect stream start and stream end
@@ -474,21 +480,21 @@ send_element(StateData, {xmlstreamstart, Name, Attrs}) ->
 send_element(StateData, {xmlstreamend, "stream:stream"}) ->
     send_text(StateData, <<"</stream:stream>">>);
 send_element(StateData, El) ->
-    send_text(StateData, xml:element_to_binary(El)).
+    send_text(StateData, exmpp_xml:document_to_binary(El)).
 
 send_stream_start(C2SPid, Attrs) ->
-    StreamTo = case lists:keyfind("to", 1, Attrs) of
-                   {"to", Ato} ->
-                       case lists:keyfind("version",
-                                          1, Attrs) of
-                           {"version", AVersion} ->
+    StreamTo = case lists:keyfind(<<"to">>, 3, Attrs) of
+                   {xmlattr, _, <<"to">>, Ato} ->
+                       case lists:keyfind(<<"version">>,
+                                          3, Attrs) of
+                           {xmlattr, _, <<"version">>, AVersion} ->
                                {Ato, AVersion};
                            _ ->
                                {Ato, ""}
                        end
                end,
     case StreamTo of
-        {To, ""} ->
+        {To, <<"">>} ->
             gen_fsm:send_event(
               C2SPid,
               {xmlstreamstart, "stream:stream",
@@ -570,11 +576,11 @@ stream_start_end(Data) ->
 streamstart_tobinary({xmlstreamstart, Name, Attrs}) ->
     XmlStrListStart = io_lib:format("<~s",[Name]),
     RestStr = attrs_tostring("", Attrs),
-    list_to_binary([XmlStrListStart,RestStr,">"]).
+    list_to_binary([XmlStrListStart,RestStr,"/>"]).
 attrs_tostring(String,[]) ->
     String;
 attrs_tostring(Str,[X|Rest]) ->
-    {Name, Value} = X,
+    {xmlattr, What, Name, Value} = X,
     AttrStr = io_lib:format(" ~s='~s'",[Name, Value]),
     attrs_tostring([Str,AttrStr], Rest).
 
